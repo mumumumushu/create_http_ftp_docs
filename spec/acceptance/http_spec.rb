@@ -7,7 +7,7 @@ resource "数据源 HTTP" do
 	require 'net/https'
   Object.const_set("HttpController", ApplicationController)  
 
-	Settings.http.each do |item|
+	Settings.http && Settings.http.each do |item|
 		_info = item[1]
 	
 		"HttpController".constantize.class_eval do 

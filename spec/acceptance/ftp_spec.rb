@@ -6,7 +6,7 @@ resource "数据源 FTP" do
 
   Object.const_set("FtpController", ApplicationController)  
 
-	Settings.ftp.each do |item|
+	Settings.ftp && Settings.ftp.each do |item|
 		_info = item[1]
 	
 		"FtpController".constantize.class_eval do 
@@ -22,7 +22,7 @@ resource "数据源 FTP" do
 		    p "+===========  start connect  ==============="
 		    connect! unless @connection
 		    p "+===========  connect success  ==============="
-		    @connection.chdir @remote_dir
+		    @connection.chdir @remote_dir.encode('gbk')
 		    
 		    file_arr = []
 		    file_infos = []
@@ -36,13 +36,25 @@ resource "数据源 FTP" do
 		      #  文件名的时间, 转码后文件名
 		    end
 		    p "+===========  file_info   ==============="
-		    p file_infos
+		    p file_infos.last
 		    file_infos = file_infos.sort_by { |k, v| k }
 		    # @is_process = false
 		    p "+===========  file_info after sort_by  ==============="
-		    p file_infos
+		    p _filename = file_infos.last[1]
+
+		    @connection.getbinaryfile(_filename)
+		    _file = File.open(_filename)
+
+		    _contents = []
+		    File.foreach(_file, encoding: @file_encoding) do |line|
+		    	line = line.encode('utf-8', :invalid => :replace)
+	        p line = line.strip
+	         _contents += [line] unless line.blank?
+	    	end
+	    	File.delete(_file)
+		    
 		    close!
-		    render :json => {aa: file_infos}
+		    render :json => {contents: _contents}
 		 	end
 
 		 	define_method "initialize" do 
@@ -54,12 +66,13 @@ resource "数据源 FTP" do
 		  end
 
 			define_method "get_report_time_string" do |filename|
-		    report_time_string = filename.send(_info["get_report_time_string"])
+				_encode = /split\((.*)\)\[(.*)\]/.match(_info["get_report_time_string"])
+		    report_time_string = filename.split(Regexp.new _encode[1][1..-2])[_encode[2].to_i]
 		  end
 
-		  define_method "ftpfile_format" do |day|
-		    # _info["filename"].tr_s("#\{}", to_date_string(day))
-		  end
+		  # define_method "ftpfile_format" do |day|
+		  #   _info["filename"].tr_s("#\{}", to_date_string(day))
+		  # end
 
 			define_method "connect!" do
 			  @connection = Net::FTP.new
@@ -89,7 +102,9 @@ resource "数据源 FTP" do
 
 		# 生成文档
 		get item[0].downcase.tr_s("::", "_") do
-			
+
+			item[1].each {|value, key| parameter value, key }
+
 			# parameter "周期", "#{_info["describe"]["period"]}"
 			# parameter "工程", "#{_info["describe"]["project"]}"
 			# parameter "备注", "#{_info["describe"]["remark"]}"
