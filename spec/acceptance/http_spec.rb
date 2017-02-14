@@ -1,6 +1,5 @@
 require "acceptance_helper"
 
-
 resource "数据源 HTTP" do
   require 'uri'
 	require 'net/http'
@@ -28,7 +27,7 @@ resource "数据源 HTTP" do
 
 		# 生成文档
 		get _info["url"] do
-			_info["header"].each{ |e| header e[0], e[1]} if _info["header"] 
+			_info["header"].each{ |key, value| header key, value} if _info["header"] 
 			parameter "周期", "#{_info["describe"]["period"]}"
 			parameter "工程", "#{_info["describe"]["project"]}"
 			parameter "备注", "#{_info["describe"]["remark"]}"
@@ -41,40 +40,5 @@ resource "数据源 HTTP" do
 	    end
 
 		end
-
+	end
 end
-
-end
-
-# connect! unless @connection
-# @connection.chdir @remote_dir
-# filename = filename.encode('gbk')
-# begin
-#   Timeout.timeout(200) do
-#     @connection.getbinaryfile(filename, local_file)  
-    
-#     @connection.delete(filename) if @file_delete
-#   end
-# rescue Exception => e
-#   exception[filename] = e
-#   close!
-#   next
-# end
-# close!
-
-
-
-
-
-
-# def connect!
-#   @connection = Net::FTP.new
-#   @connection.connect(@server, @port)
-#   @connection.passive = @passive || false
-#   @connection.login(@user, @password)
-# end
-
-# def close!
-#   @connection.close if @connection
-#   @connection = nil
-# end
