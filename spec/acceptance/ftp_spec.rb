@@ -57,7 +57,7 @@ resource "数据源 FTP" do
 				    day_to_fetch = @day_to_fetch || 1
 				    last_day_string = to_date_string(today - day_to_fetch)
 
-				    @last_report_time = Time.zone.parse(time_string) 
+				    # @last_report_time = Time.zone.parse(time_string) 
 				    p "+===========  start connect  ==============="
 				    connect! unless @connection
 				    p "+===========  connect success  ==============="
