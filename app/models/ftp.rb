@@ -1,14 +1,18 @@
 class Ftp 
+	# 参数缺失鉴权 ！
 	require 'net/ftp'
 	def self.aaa
-		FileUtils.rm_r(Dir.glob("#{Rails.root}/doc/*"))
+		FileUtils.makedir("#{Rails.root}/doc/api/") unless File.exist?("#{Rails.root}/doc/api/")
+		FileUtils.rm_r(Dir.glob("#{Rails.root}/doc/api/*"))
 		Settings.ftp.each do |key, settings|
 	  	Ftp.new("ftp", key, settings).create_docs
 	  end
 	  p "+===========   start copy to public ==============="
 	  FileUtils.rm_r("#{Rails.root}/public/doc")
 	  p FileUtils.cp_r("#{Rails.root}/doc", "#{Rails.root}/public/doc/", remove_destination: true)
+	  Ftp.create_index
 	end
+
 	def initialize resource="ftp", key, settings
 		@resource = resource
     @item_name = key
@@ -29,27 +33,38 @@ class Ftp
    	p "+===========   success remote_dir  ==============="
    	p "#{ftpfile_format( _day)}"
     file_arr = []
-    # until file_arr.any?
-    	_day -= 1
-    	p "============ ftpfile_format( _day)  ====="
-    	p "#{ftpfile_format( _day)}"
-    	p file_arr = @connection.nlst(ftpfile_format( _day)).last(30) 
-    # end
+      # @connection.ls.each {|x| p x}
+    # 
+  	(0..@day_to_fetch || 2).each do |n|
+  		_day -= (n + 1) unless @day_to_fetch == 0 # @day_to_fetch=0 时 取今天
+  	p "============ ftpfile_format( _day)  ====="
+  	p "#{ftpfile_format( _day)}"
+  	p file_arr = @connection.nlst(ftpfile_format( _day)).last(30) 
+		end
     p "+===========   file_arr  ==============="
-    p file_arr
+   close!
     _content = []
+     p "+===========   local_dir  ==============="
+  	 p @local_dir
+  	FileUtils.makedirs(@local_dir) unless File.exist?(@local_dir)
     file_arr.each do |filename|
     	connect! unless @connection
-    	FileUtils.makedirs(@local_dir) unless File.exist?(@local_dir)
+    	# filename = if filename.force_encoding.include?("�")
+    	local_file = File.join(@local_dir, remove_mojibake(filename, _day))
+    	# @connection.getbinaryfile(filename, local_file)
 
-    	local_file = File.join(@local_dir, filename)
-    	@connection.getbinaryfile(filename, local_file)
+        Timeout.timeout(200) do
+          @connection.getbinaryfile(filename, local_file)  
+        end
+      
+
 			 p "+===========   start copy  ==============="
-    	_content += [parse(local_file, filename)]
+    	_content += [parse(local_file, remove_mojibake(filename, _day))]
     	p "+===========   finish copy  ==============="
     # rescue
     # 	connect!
     # 	redo
+    	 
     	close!
     end
     # close!
@@ -64,18 +79,27 @@ class Ftp
  		# 图片 "<img src="#{Settings.root_url}/doc/api/#{@resource}/#{filename}" />"
  		# 文件路径 "#{Rails.root}/public//doc/api/#{@resource}/#{filename}"
  		return ["<a link href=\"#{Settings.root_url}/doc/api/#{@resource}/#{filename}\">#{filename}</a>",
- 						"<img src=\"#{Settings.root_url}/doc/api/#{@resource}/#{filename}\" />"] unless local_file.include?('.txt')	
+ 						"<img src=\"#{Settings.root_url}/doc/api/#{@resource}/#{filename}\" />",
+ 						"#{Settings.root_url}/doc/api/#{@resource}/#{filename}"] unless local_file.include?('.txt')	
  		_text = []
  		File.foreach(local_file, encoding: @file_encoding) do |line|
-    	line = line.encode('utf-8', :invalid => :replace)
+    	line = line.encode('utf-8', :invalid => :replace) rescue line.encode('gb2312', :invalid => :replace)
       line = line.strip
        _text += [line] unless line.blank?
   	end
-  	_text
+  	["<a link href=\"#{Settings.root_url}/doc/api/#{@resource}/#{filename}\">#{filename}</a>", _text.join('<br/>'), _text]
+  	# 返回[ link, http, json]
  	end
 
   def ftpfile_format day
-    @filename.gsub('#{date}', Time.now.to_date.strftime('%Y%m%d'))
+     _filename = @filename.gsub('#{date}', day.strftime('%Y%m%d'))
+     @filename_encoding ? _filename.encode(@filename_encoding) : _filename
+  end
+
+  def remove_mojibake filename, day
+		return filename unless @filename_encoding && /(.*)#\{date\}(.*)/.match(@filename)
+		p "=======   filename"
+		/(.*)#\{date\}(.*)/.match(@filename)[1] + Regexp.new("^(.*)#{day.strftime('%Y%m%d')}(.*)$").match(filename).try("[]", 2) 
   end
 
 	def connect!
@@ -85,6 +109,7 @@ class Ftp
 	  @connection.passive = @passive || false
 	  @connection.login(@user, @password)
 	  p "+===========  connect success  ==============="
+	  @remote_dir = eval(@remote_dir) if @remote_dir.include?("File.join")
 	  @connection.chdir @remote_dir.encode('gbk')
 	end
 
@@ -111,10 +136,10 @@ class Ftp
 	      <td><span class=\"description\">#{value}</span></td>
 	    </tr>"}.join
 	  # _body_html = _content.map { |e|   }
-	  _html_file = File.join @local_dir, "#{@title}.html"
-		_html_file = File.new(_html_file, "w")
-		_json_file = File.join @local_dir, "#{@title}.json"
-		_json_file = File.new(_json_file, "w")
+	  _html_file = File.join @local_dir, "#{@title.gsub("/", "_")}.html"
+		_html_file = File.open(_html_file, "w")
+		_json_file = File.join @local_dir, "#{@title.gsub("/", "_")}.json"
+		_json_file = File.open(_json_file, "w")
   	_json_file.write(
 	  	{
 			  "resource": "#{@resource}",
@@ -124,7 +149,7 @@ class Ftp
 			  "parameters": "#{_parameter_json}",
 			  "requests": [
 			    {
-			      "response_body": _content,
+			      # "response_body": _content.map { |item| item[2] }.join,
 			      "response_content_type": "application/json; charset=utf-8",
 			    }
 			  ]
@@ -258,8 +283,11 @@ class Ftp
 		          </table>
 		          <h3>Response</h3>
 		             	<h4>Body</h4>
-		              <pre class=\"response body\">#{_content.join('<br/>')}</pre>
-		      </div>
+		              <pre class=\"response body\">")
+  	# 分开写入 解决不同码率无法结合成一个字符串
+  	_html_file.write("#{_content.map { |item| [item[0]].join('<br\>') }.join('<br/>')}</pre>")# , item[1].force_encoding('gbk').encode('utf-8')
+		_content.map {|item| [item[0], item[1]] }.flatten(1).each {|e| _html_file.write(e); _html_file.write("<br/>")}            
+		_html_file.write("</div>
 		    </div>
 		  </body>
 		</html>"
@@ -267,6 +295,138 @@ class Ftp
   	_html_file.close
   end
 
-  
+  def self.create_index
+  	url_ary = []
+  	Settings.each do |resource, settings|
+  		settings.each {|key, value| url_ary += [["#{Settings.root_url}/doc/api/#{resource}/#{value["title"]}.html", "#{value["title"]}"]] } if resource.in?(["translate", "root_url"]).! && settings 
+		end
+		_html_file = File.new("#{Rails.root}/public/doc/api/index.html", "w")
+		p url_ary
+		_html_file.write(
+			"<!DOCTYPE html>
+<html>
+<head>
+  <title>Smart Life API</title>
+  <meta charset=\"utf-8\">
+  <style>
+    
+body {
+  font-family: Helvetica,Arial,sans-serif;
+  font-size: 13px;
+  font-weight: normal;
+  line-height: 18px;
+  color: #404040;
+}
+
+.container {
+  width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+  zoom: 1;
+}
+
+pre {
+  background-color: #f5f5f5;
+  display: block;
+  padding: 8.5px;
+  margin: 0 0 18px;
+  line-height: 18px;
+  font-size: 12px;
+  border: 1px solid #ccc;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  -webkit-border-radius: 3px;
+  -moz-border-radius: 3px;
+  border-radius: 3px;
+  white-space: pre;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+td.required .name:after {
+  float: right;
+  content: &quot;required&quot;;
+  font-weight: normal;
+  color: #F08080;
+}
+
+a{
+  color: #0069d6;
+  text-decoration: none;
+  line-height: inherit;
+  font-weight: inherit;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: bold;
+  color: #404040;
+}
+
+h1 {
+  margin-bottom: 18px;
+  font-size: 30px;
+  line-height: 36px;
+}
+h2 {
+  font-size: 24px;
+  line-height: 36px;
+}
+h3{
+  font-size: 18px;
+  line-height: 36px;
+}
+h4 {
+  font-size: 16px;
+  line-height: 36px;
+}
+
+table{
+  width: 100%;
+  margin-bottom: 18px;
+  padding: 0;
+  border-collapse: separate;
+  font-size: 13px;
+  -webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  border-radius: 4px;
+  border-spacing: 0;
+  border: 1px solid #ddd;
+}
+
+table th {
+  padding-top: 9px;
+  font-weight: bold;
+  vertical-align: middle;
+  border-bottom: 1px solid #ddd;
+}
+table th+th, table td+td {
+  border-left: 1px solid #ddd;
+}
+table th, table td {
+  padding: 10px 10px 9px;
+  line-height: 18px;
+  text-align: left;
+}
+
+  </style>
+</head>
+<body>
+<div class=\"container\">
+  <h1>气象数据源</h1>
+
+  <div class=\"article\">
+    <h2>ftp</h2>
+
+    <ul>
+    	#{url_ary.map {|item| "<li><a href=\"#{item[0]}\">#{item[1]}</a></li>"}.join}
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>
+"
+			)
+		_html_file.close
+  end
 end
 

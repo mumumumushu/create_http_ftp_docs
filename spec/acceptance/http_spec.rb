@@ -13,7 +13,10 @@ resource "数据源 HTTP" do
 			# 获得body数据
 			define_method "#{item[0].downcase.tr_s("::", "_")}" do 
 				# 使用def 会在 对应 ApplicationController 中寻找 _info
-				url = URI(_info["url"])
+				p URI::encode(_info["url"])
+				p '-----'
+			p 	url = URI(URI::parse(URI::encode(_info["url"])))
+			p URI::encode(_info["url"])
 				http = Net::HTTP.new(url.host, url.port)
 				request = Net::HTTP::Get.new(url)
 				# _info["params"].each{ |e| let(e[0].to_sym) { e[1]["value"] } } if _info["params"]

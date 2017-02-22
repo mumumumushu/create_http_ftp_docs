@@ -26,6 +26,12 @@ Gemfile.lock
 config/application.yml
 config/all_application.yml
 config/application.sample.yml
+config/cloud_kernel_platform_ftp.yml
+config/cloud_kernel_platform_http.yml
+config/sh_weather_ftp.yml
+config/sh_weather_http.yml
+config/from_10.228.96.113_local.yml
+
 
 public/*
 doc/*
